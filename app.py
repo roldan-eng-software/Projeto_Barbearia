@@ -2,9 +2,24 @@ from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta
 import sqlite3
 import os
+from dotenv import load_dotenv
+from twilio.rest import Client
+
+# Carregar variáveis de ambiente
+load_dotenv()
 
 app = Flask(__name__)
 DATABASE = 'barbershop.db'
+
+# Configurar Twilio
+TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+TWILIO_WHATSAPP_NUMBER = os.getenv('TWILIO_WHATSAPP_NUMBER')
+
+# Inicializar cliente Twilio (apenas se credenciais existirem)
+twilio_client = None
+if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
+    twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 def init_db():
     """Inicializa o banco de dados com as tabelas necessárias"""
@@ -22,12 +37,14 @@ def init_db():
         c.execute('''CREATE TABLE agendamentos
                      (id INTEGER PRIMARY KEY,
                       cliente TEXT NOT NULL,
+                      whatsapp TEXT,
                       barbeiro_id INTEGER NOT NULL,
                       data TEXT NOT NULL,
                       horario TEXT NOT NULL,
                       servico TEXT NOT NULL,
                       valor REAL,
                       status TEXT DEFAULT 'agendado',
+                      criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                       FOREIGN KEY(barbeiro_id) REFERENCES barbeiros(id))''')
         
         # Insere alguns barbeiros de exemplo
@@ -47,6 +64,47 @@ def get_db():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
+
+def enviar_confirmacao_whatsapp(numero_whatsapp, cliente, barbeiro, data, horario, servico):
+    """Envia mensagem de confirmação via WhatsApp"""
+    if not twilio_client:
+        print("⚠️ Twilio não configurado. Mensagem não será enviada.")
+        return False
+    
+    try:
+        # Formatar data em português
+        data_obj = datetime.strptime(data, '%Y-%m-%d')
+        data_formatada = data_obj.strftime('%d/%m/%Y')
+        
+        mensagem = f"""✂️ *CONFIRMAÇÃO DE AGENDAMENTO* ✂️
+
+Olá {cliente}! 👋
+
+Seu agendamento foi confirmado com sucesso!
+
+📅 *Data:* {data_formatada}
+🕐 *Horário:* {horario}
+💈 *Barbeiro:* {barbeiro}
+✨ *Serviço:* {servico}
+
+Qualquer dúvida, entre em contato conosco!
+
+Obrigado por escolher nosso salão! 🙏"""
+        
+        # Formatar número com código do país
+        numero_formatado = f"whatsapp:+{numero_whatsapp.replace(' ', '').replace('-', '').replace('(', '').replace(')', '')}"
+        
+        mensagem_enviada = twilio_client.messages.create(
+            body=mensagem,
+            from_=TWILIO_WHATSAPP_NUMBER,
+            to=numero_formatado
+        )
+        
+        print(f"✅ Mensagem enviada para {numero_whatsapp}")
+        return True
+    except Exception as e:
+        print(f"❌ Erro ao enviar mensagem: {str(e)}")
+        return False
 
 @app.route('/')
 def index():
@@ -94,21 +152,39 @@ def horarios_disponiveis():
 
 @app.route('/api/agendar', methods=['POST'])
 def agendar():
-    """Cria um novo agendamento"""
+    """Cria um novo agendamento e envia confirmação via WhatsApp"""
     try:
         dados = request.get_json()
         
         conn = get_db()
         c = conn.cursor()
         
+        # Inserir agendamento
         c.execute('''INSERT INTO agendamentos 
-                     (cliente, barbeiro_id, data, horario, servico, valor)
-                     VALUES (?, ?, ?, ?, ?, ?)''',
-                  (dados['cliente'], int(dados['barbeiro_id']), dados['data'],
-                   dados['horario'], dados['servico'], float(dados['valor'])))
+                     (cliente, whatsapp, barbeiro_id, data, horario, servico, valor)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                  (dados['cliente'], dados.get('whatsapp'), int(dados['barbeiro_id']), 
+                   dados['data'], dados['horario'], dados['servico'], float(dados['valor'])))
         
         conn.commit()
+        
+        # Buscar dados do barbeiro para a mensagem
+        barbeiro = c.execute('SELECT nome FROM barbeiros WHERE id = ?', 
+                            (int(dados['barbeiro_id']),)).fetchone()
+        
         conn.close()
+        
+        # Enviar mensagem WhatsApp se número foi fornecido
+        if dados.get('whatsapp') and barbeiro:
+            enviar_confirmacao_whatsapp(
+                dados['whatsapp'],
+                dados['cliente'],
+                barbeiro[0],
+                dados['data'],
+                dados['horario'],
+                dados['servico']
+            )
+        
         return jsonify({'sucesso': True, 'mensagem': 'Agendamento realizado com sucesso! ✅'})
     except Exception as e:
         return jsonify({'sucesso': False, 'mensagem': f'Erro: {str(e)}'}), 400
@@ -145,6 +221,11 @@ def agenda_barbeiro(barbeiro_id, data):
 @app.route('/relatorio')
 def relatorio():
     """Página de relatório de vendas"""
+    return render_template('relatorio.html')
+
+@app.route('/api/relatorio')
+def get_relatorio():
+    """Retorna dados de relatório em JSON"""
     conn = get_db()
     c = conn.cursor()
     relatorio_vendas = c.execute(
@@ -156,7 +237,7 @@ def relatorio():
     ).fetchall()
     conn.close()
     
-    return render_template('relatorio.html', relatorio=relatorio_vendas)
+    return jsonify([dict(r) for r in relatorio_vendas])
 
 if __name__ == '__main__':
     print("🔧 Inicializando sistema de agendamento...")

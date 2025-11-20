@@ -1,45 +1,167 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Relatório - Salão de Barberia</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { color: #333; margin-bottom: 20px; text-align: center; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        th { background: #2c3e50; color: white; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #f5f5f5; padding: 10px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-bottom: 20px; text-align: center; font-size: 1.8rem; }
+        
+        /* Tabela responsiva */
+        .tabela-wrapper { overflow-x: auto; }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-bottom: 20px;
+            font-size: 0.95rem;
+        }
+        th, td { 
+            padding: 12px; 
+            text-align: left; 
+            border-bottom: 1px solid #ddd;
+        }
+        th { 
+            background: #2c3e50; 
+            color: white;
+            font-weight: 600;
+        }
+        td { color: #333; }
         tr:hover { background: #f9f9f9; }
-        .total { font-weight: bold; background: #ecf0f1; }
-        a { display: inline-block; padding: 8px 12px; background: #2c3e50; color: white; text-decoration: none; border-radius: 4px; }
-        a:hover { background: #1a252f; }
+        .total { 
+            font-weight: 600; 
+            background: #ecf0f1;
+        }
+        .total td { font-weight: 600; }
+        
+        .nav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+        .nav a { 
+            display: block;
+            padding: 12px; 
+            background: #2c3e50; 
+            color: white; 
+            text-decoration: none; 
+            border-radius: 6px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        .nav a:active { transform: scale(0.95); }
+        .nav a:hover { background: #1a252f; }
+
+        .vazio { text-align: center; color: #999; padding: 30px 20px; }
+
+        /* Mobile - Cards em vez de tabela */
+        @media (max-width: 600px) {
+            table { display: none; }
+            .card-view { display: block; }
+            .card { 
+                background: #f9f9f9; 
+                padding: 15px; 
+                margin-bottom: 12px; 
+                border-left: 4px solid #2c3e50; 
+                border-radius: 6px;
+            }
+            .card h3 { color: #2c3e50; margin-bottom: 8px; font-size: 1rem; }
+            .card p { color: #666; margin: 5px 0; font-size: 0.9rem; }
+            .card.total { background: #ecf0f1; border-left-color: #27ae60; }
+        }
+
+        @media (min-width: 768px) {
+            body { padding: 20px; }
+            .container { padding: 30px; }
+            h1 { font-size: 2rem; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>💰 Relatório de Vendas</h1>
         
-        <table>
-            <thead>
-                <tr>
-                    <th>Data</th>
-                    <th>Agendamentos</th>
-                    <th>Total (R$)</th>
-                </tr>
-            </thead>
-            <tbody id="relatorio-body">
-            </tbody>
-        </table>
-        <a href="/">← Voltar</a>
+        <div class="tabela-wrapper">
+            <table id="tabela-relatorio">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Agendamentos</th>
+                        <th>Total (R$)</th>
+                    </tr>
+                </thead>
+                <tbody id="relatorio-body">
+                </tbody>
+            </table>
+        </div>
+
+        <div id="card-view" class="card-view"></div>
+
+        <div class="nav">
+            <a href="/">← Agendamento</a>
+            <a href="/agenda">📅 Agenda</a>
+        </div>
     </div>
 
     <script>
-        fetch('/relatorio')
-            .then(r => r.text())
-            .then(html => {
-                document.body.innerHTML = html;
+        fetch('/api/relatorio')
+            .then(r => r.json())
+            .then(dados => {
+                if (dados.length === 0) {
+                    document.getElementById('tabela-relatorio').style.display = 'none';
+                    document.getElementById('card-view').innerHTML = '<div class="vazio">📊 Nenhum dado de vendas</div>';
+                    return;
+                }
+
+                let totalGeral = 0;
+                let totalAgendamentos = 0;
+
+                // Preencher tabela
+                const tbody = document.getElementById('relatorio-body');
+                const cardView = document.getElementById('card-view');
+                
+                tbody.innerHTML = dados.map(d => {
+                    totalGeral += parseFloat(d.total || 0);
+                    totalAgendamentos += parseInt(d.agendamentos || 0);
+                    return `
+                        <tr>
+                            <td>${formatarData(d.data)}</td>
+                            <td>${d.agendamentos}</td>
+                            <td>R$ ${parseFloat(d.total || 0).toFixed(2)}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                // Adicionar total
+                tbody.innerHTML += `
+                    <tr class="total">
+                        <td><strong>TOTAL</strong></td>
+                        <td><strong>${totalAgendamentos}</strong></td>
+                        <td><strong>R$ ${totalGeral.toFixed(2)}</strong></td>
+                    </tr>
+                `;
+
+                // Cards para mobile
+                cardView.innerHTML = dados.map(d => `
+                    <div class="card">
+                        <h3>📅 ${formatarData(d.data)}</h3>
+                        <p><strong>Agendamentos:</strong> ${d.agendamentos}</p>
+                        <p><strong>Total:</strong> R$ ${parseFloat(d.total || 0).toFixed(2)}</p>
+                    </div>
+                `).join('');
+
+                cardView.innerHTML += `
+                    <div class="card total">
+                        <h3>📊 TOTAL</h3>
+                        <p><strong>Agendamentos:</strong> ${totalAgendamentos}</p>
+                        <p><strong>Total:</strong> R$ ${totalGeral.toFixed(2)}</p>
+                    </div>
+                `;
             });
+
+        function formatarData(data) {
+            const d = new Date(data + 'T00:00:00');
+            return d.toLocaleDateString('pt-BR', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+        }
     </script>
 </body>
 </html>
