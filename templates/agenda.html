@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Agenda - Salão de Barberia</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-bottom: 20px; text-align: center; }
+        .filtros { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        select, input { padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        .agenda-item { background: #f9f9f9; padding: 15px; margin-bottom: 10px; border-left: 4px solid #2c3e50; border-radius: 4px; }
+        .agenda-item h3 { color: #2c3e50; }
+        .agenda-item p { color: #666; margin-top: 5px; }
+        a { display: inline-block; margin-top: 10px; padding: 8px 12px; background: #2c3e50; color: white; text-decoration: none; border-radius: 4px; }
+        a:hover { background: #1a252f; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📅 Agenda do Salão</h1>
+        
+        <div class="filtros">
+            <div>
+                <label>Barbeiro:</label>
+                <select id="barbeiro_id">
+                    <option value="">Todos</option>
+                </select>
+            </div>
+            <div>
+                <label>Data:</label>
+                <input type="date" id="data">
+            </div>
+        </div>
+        
+        <div id="agenda-container"></div>
+        <a href="/">← Voltar</a>
+    </div>
+
+    <script>
+        carregarAgenda();
+
+        document.getElementById('barbeiro_id').addEventListener('change', carregarAgenda);
+        document.getElementById('data').addEventListener('change', carregarAgenda);
+
+        function carregarAgenda() {
+            const barbeiro_id = document.getElementById('barbeiro_id').value;
+            const data = document.getElementById('data').value || new Date().toISOString().split('T')[0];
+
+            fetch(`/api/agenda/${barbeiro_id || 1}/${data}`)
+                .then(r => r.json())
+                .then(agendamentos => {
+                    const container = document.getElementById('agenda-container');
+                    if (agendamentos.length === 0) {
+                        container.innerHTML = '<p>Nenhum agendamento para este dia.</p>';
+                        return;
+                    }
+                    container.innerHTML = agendamentos.map(a => `
+                        <div class="agenda-item">
+                            <h3>${a.horario} - ${a.cliente}</h3>
+                            <p><strong>Barbeiro:</strong> ${a.barbeiro_nome}</p>
+                            <p><strong>Serviço:</strong> ${a.servico}</p>
+                            <p><strong>Valor:</strong> R$ ${a.valor.toFixed(2)}</p>
+                        </div>
+                    `).join('');
+                });
+        }
+
+        // Definir data de hoje
+        document.getElementById('data').value = new Date().toISOString().split('T')[0];
+    </script>
+</body>
+</html>

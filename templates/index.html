@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Agendamento - Salão de Barberia</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-bottom: 20px; text-align: center; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        input:focus, select:focus { outline: none; border-color: #2c3e50; }
+        button { width: 100%; padding: 12px; background: #2c3e50; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; margin-top: 10px; }
+        button:hover { background: #1a252f; }
+        .horarios { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+        .horario { padding: 8px; text-align: center; border: 2px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .horario:hover { border-color: #2c3e50; }
+        .horario.selecionado { background: #2c3e50; color: white; border-color: #2c3e50; }
+        .horario.indisponivel { background: #eee; cursor: not-allowed; color: #999; }
+        .sucesso { background: #d4edda; color: #155724; padding: 12px; border-radius: 4px; margin-bottom: 15px; display: none; }
+        .erro { background: #f8d7da; color: #721c24; padding: 12px; border-radius: 4px; margin-bottom: 15px; display: none; }
+        .nav { text-align: center; margin-top: 20px; }
+        .nav a { display: inline-block; margin: 0 10px; padding: 8px 15px; background: #2c3e50; color: white; text-decoration: none; border-radius: 4px; }
+        .nav a:hover { background: #1a252f; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✂️ Agende seu Corte</h1>
+        <div class="sucesso" id="mensagem-sucesso"></div>
+        <div class="erro" id="mensagem-erro"></div>
+        
+        <form id="formulario-agendamento">
+            <div class="form-group">
+                <label>Seu Nome:</label>
+                <input type="text" id="cliente" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Barbeiro:</label>
+                <select id="barbeiro_id" required>
+                    <option value="">Escolha um barbeiro</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Data:</label>
+                <input type="date" id="data" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Horário:</label>
+                <div class="horarios" id="horarios-container"></div>
+                <input type="hidden" id="horario">
+            </div>
+            
+            <div class="form-group">
+                <label>Serviço:</label>
+                <select id="servico" required>
+                    <option value="">Escolha um serviço</option>
+                    <option value="Corte">Corte - R$ 50,00</option>
+                    <option value="Barba">Barba - R$ 30,00</option>
+                    <option value="Corte + Barba">Corte + Barba - R$ 70,00</option>
+                    <option value="Desenho">Desenho - R$ 40,00</option>
+                </select>
+            </div>
+            
+            <input type="hidden" id="valor">
+            <button type="submit">Agendar</button>
+        </form>
+
+        <div class="nav">
+            <a href="/agenda">📅 Ver Agenda</a>
+            <a href="/relatorio">💰 Relatório</a>
+        </div>
+    </div>
+
+    <script>
+        const precos = {
+            'Corte': 50,
+            'Barba': 30,
+            'Corte + Barba': 70,
+            'Desenho': 40
+        };
+
+        // Carregar barbeiros ao iniciar a página
+        window.addEventListener('load', carregarBarbeiros);
+
+        function carregarBarbeiros() {
+            console.log('Carregando barbeiros...');
+            fetch('/')
+                .then(r => r.text())
+                .then(html => {
+                    // Extrair dados do HTML retornado
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const barbeirosScript = doc.querySelector('script:contains("barbeiros")');
+                    
+                    // Alternativa: buscar diretamente da API
+                    return fetch('/api/barbeiros');
+                })
+                .catch(() => {
+                    // Se não existir rota /api/barbeiros, usar dados padrão
+                    console.log('Usando barbeiros padrão');
+                    const barbeirosDefault = [
+                        { id: 1, nome: 'João Silva' },
+                        { id: 2, nome: 'Carlos Santos' },
+                        { id: 3, nome: 'Pedro Oliveira' }
+                    ];
+                    preencherBarbeiros(barbeirosDefault);
+                });
+
+            // Tentar buscar da API
+            fetch('/api/barbeiros')
+                .then(r => r.json())
+                .then(barbeiros => preencherBarbeiros(barbeiros))
+                .catch(err => console.error('Erro ao carregar barbeiros:', err));
+        }
+
+        function preencherBarbeiros(barbeiros) {
+            console.log('Barbeiros carregados:', barbeiros);
+            const select = document.getElementById('barbeiro_id');
+            select.innerHTML = '<option value="">Escolha um barbeiro</option>';
+            
+            barbeiros.forEach(barbeiro => {
+                const option = document.createElement('option');
+                option.value = barbeiro.id;
+                option.textContent = barbeiro.nome + ' - ' + (barbeiro.especialidade || '');
+                select.appendChild(option);
+            });
+        }
+
+        // Ao mudar barbeiro ou data
+        document.getElementById('barbeiro_id').addEventListener('change', carregarHorarios);
+        document.getElementById('data').addEventListener('change', carregarHorarios);
+
+        function carregarHorarios() {
+            const data = document.getElementById('data').value;
+            const barbeiro_id = document.getElementById('barbeiro_id').value;
+            
+            if (!data || !barbeiro_id) {
+                document.getElementById('horarios-container').innerHTML = '';
+                return;
+            }
+
+            fetch('/api/horarios-disponiveis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data, barbeiro_id })
+            })
+            .then(r => r.json())
+            .then(horarios => {
+                const container = document.getElementById('horarios-container');
+                container.innerHTML = '';
+                if (horarios.length === 0) {
+                    container.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #999;">Nenhum horário disponível</p>';
+                    return;
+                }
+                horarios.forEach(h => {
+                    const btn = document.createElement('div');
+                    btn.className = 'horario';
+                    btn.textContent = h;
+                    btn.onclick = () => selecionarHorario(h, btn);
+                    container.appendChild(btn);
+                });
+            })
+            .catch(err => console.error('Erro ao carregar horários:', err));
+        }
+
+        function selecionarHorario(horario, elemento) {
+            document.querySelectorAll('.horario').forEach(h => h.classList.remove('selecionado'));
+            elemento.classList.add('selecionado');
+            document.getElementById('horario').value = horario;
+        }
+
+        // Ao mudar serviço
+        document.getElementById('servico').addEventListener('change', (e) => {
+            document.getElementById('valor').value = precos[e.target.value] || 0;
+        });
+
+        // Enviar agendamento
+        document.getElementById('formulario-agendamento').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const horario = document.getElementById('horario').value;
+            if (!horario) {
+                alert('Por favor, selecione um horário');
+                return;
+            }
+
+            const dados = {
+                cliente: document.getElementById('cliente').value,
+                barbeiro_id: document.getElementById('barbeiro_id').value,
+                data: document.getElementById('data').value,
+                horario: horario,
+                servico: document.getElementById('servico').value,
+                valor: document.getElementById('valor').value
+            };
+
+            const res = await fetch('/api/agendar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(dados)
+            });
+
+            const resultado = await res.json();
+            const sucesso = document.getElementById('mensagem-sucesso');
+            const erro = document.getElementById('mensagem-erro');
+
+            if (resultado.sucesso) {
+                sucesso.textContent = resultado.mensagem;
+                sucesso.style.display = 'block';
+                document.getElementById('formulario-agendamento').reset();
+                document.getElementById('horarios-container').innerHTML = '';
+                setTimeout(() => sucesso.style.display = 'none', 3000);
+            } else {
+                erro.textContent = resultado.mensagem;
+                erro.style.display = 'block';
+            }
+        });
+
+        // Definir data mínima como hoje
+        const hoje = new Date().toISOString().split('T')[0];
+        document.getElementById('data').min = hoje;
+    </script>
+</body>
+</html>
